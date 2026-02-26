@@ -24,36 +24,36 @@ model User {
 }
 
 model ParkingLot {
-  id          Int      @id @default(autoincrement())
-  name        String
-  location    String
-  capacity    Int
-  floors      Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  ParkingSpot  ParkingSpot[]
+  id              Int      @id @default(autoincrement())
+  name            String
+  location        String
+  floors          Int
+  spotsPerFloor   Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  ParkingSpot     ParkingSpot[]
 }
 
 model ParkingSpot {
-  id          Int      @id @default(autoincrement())
-  lotId       Int
-  floor       Int
-  spotNumber   String
-  spotType     SpotType
-  isOccupied   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  lotId         Int
+  floor         Int
+  spotNumber    String
+  spotType      SpotType
+  isOccupied    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   ParkingLot   ParkingLot @relation(fields: [lotId], references: [id])
 }
 
 model Vehicle {
-  id          Int      @id @default(autoincrement())
-  licensePlate String   @unique
-  ownerName   String
-  createdAt   DateTime @default(now())
-  checkInTime  DateTime
-  checkOutTime DateTime?
+  id            Int      @id @default(autoincrement())
+  licensePlate  String   @unique
+  ownerName     String
+  createdAt     DateTime @default(now())
+  checkInTime   DateTime
+  checkOutTime  DateTime?
 }
 
 enum SpotType {

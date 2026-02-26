@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { prisma } from "../../lib/prisma.js";
 import { adminSignInSchema } from '../../validators/userSchemas.js';
 import jwt from 'jsonwebtoken';
@@ -13,7 +13,7 @@ router.get('/', (req, res) => {
   res.send('Welcome to the API v1');
 });
 
-router.post('/signin', async (req, res) => {
+router.post('/signin', async (req: Request, res: Response) => {
     const body = req.body;
 
     const parsedBody = adminSignInSchema.safeParse(body);
@@ -38,6 +38,10 @@ router.post('/signin', async (req, res) => {
         message: 'Sign-in successful',
         token 
     });
-})
+});
+
+router.post('/createParkingLot', async (req: Request, res: Response) => {
+    
+});
 
 export default router;
