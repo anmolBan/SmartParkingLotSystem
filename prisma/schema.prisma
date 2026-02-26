@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String?
+  password  String
+  type      UserType
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ParkingLot {
+  id          Int      @id @default(autoincrement())
+  name        String
+  location    String
+  capacity    Int
+  floors      Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  ParkingSpot  ParkingSpot[]
+}
+
+model ParkingSpot {
+  id          Int      @id @default(autoincrement())
+  lotId       Int
+  floor       Int
+  spotNumber   String
+  spotType     SpotType
+  isOccupied   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ParkingLot   ParkingLot @relation(fields: [lotId], references: [id])
+}
+
+model Vehicle {
+  id          Int      @id @default(autoincrement())
+  licensePlate String   @unique
+  ownerName   String
+  createdAt   DateTime @default(now())
+  checkInTime  DateTime
+  checkOutTime DateTime?
+}
+
+enum SpotType {
+  BIKE
+  TRUCK
+  COMPACT
+  LARGE
+  HANDICAPPED
+}
+
+enum UserType {
+  ADMIN
+  USER
+}

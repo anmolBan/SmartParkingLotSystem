@@ -1,0 +1,22 @@
+# Environment
+.env
+.env.*
+
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Prisma generated
+/src/generated/prisma
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea
+.vscode
+
+/src/generated/prisma
