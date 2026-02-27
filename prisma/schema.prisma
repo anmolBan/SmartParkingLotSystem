@@ -27,8 +27,12 @@ model ParkingLot {
   id              Int      @id @default(autoincrement())
   name            String
   location        String
-  floors          Int
-  spotsPerFloor   Int
+  floorsReservedForTrucks Int
+  spotsPerFloorReservedForTrucks Int
+  floorsReservedForBikes Int
+  spotsPerFloorReservedForBikes Int
+  floorsReservedForCompact Int
+  spotsPerFloorReservedForCompact Int
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   ParkingSpot     ParkingSpot[]
@@ -45,23 +49,24 @@ model ParkingSpot {
   updatedAt     DateTime @updatedAt
 
   ParkingLot   ParkingLot @relation(fields: [lotId], references: [id])
+  Vehicle      Vehicle?
 }
 
 model Vehicle {
   id            Int      @id @default(autoincrement())
   licensePlate  String   @unique
-  ownerName     String
+  vehicleType   SpotType
   createdAt     DateTime @default(now())
   checkInTime   DateTime
   checkOutTime  DateTime?
+  parkingSpotId Int      @unique
+  ParkingSpot   ParkingSpot @relation(fields: [parkingSpotId], references: [id])
 }
 
 enum SpotType {
   BIKE
-  TRUCK
   COMPACT
   LARGE
-  HANDICAPPED
 }
 
 enum UserType {

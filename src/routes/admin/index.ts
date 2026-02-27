@@ -51,20 +51,81 @@ router.post('/createParkingLot', authMiddleware, async (req: Request, res: Respo
         return res.status(400).json({ error: parsedBody.error.issues.map(issue => issue.message) });
     }
 
-    const { name, location, floors, spotsPerFloor } = parsedBody.data;
+    const { name, location, floorsReservedForTrucks, spotsPerFloorReservedForTrucks, floorsReservedForBikes, spotsPerFloorReservedForBikes, floorsReservedForCompact, spotsPerFloorReservedForCompact } = parsedBody.data;
 
     try {
         const newParkingLot = await prisma.parkingLot.create({
             data: {
                 name,
                 location,
-                floors,
-                spotsPerFloor
+                floorsReservedForTrucks,
+                spotsPerFloorReservedForTrucks,
+                floorsReservedForBikes,
+                spotsPerFloorReservedForBikes,
+                floorsReservedForCompact,
+                spotsPerFloorReservedForCompact
             }
         });
+
+        // Auto-create parking spots
+        const parkingSpots: { lotId: number; floor: number; spotNumber: string; isOccupied: boolean; spotType: 'LARGE' | 'COMPACT' | 'BIKE' }[] = [];
+        let currentFloor = 1;
+
+        // 1. LARGE (truck) spots on lowest floors
+        for (let f = 0; f < newParkingLot.floorsReservedForTrucks; f++) {
+            for (let s = 1; s <= newParkingLot.spotsPerFloorReservedForTrucks; s++) {
+                parkingSpots.push({
+                    lotId: newParkingLot.id,
+                    floor: currentFloor,
+                    spotNumber: `LARGE-${currentFloor}-${s}`,
+                    isOccupied: false,
+                    spotType: 'LARGE'
+                });
+            }
+            currentFloor++;
+        }
+
+        // 2. COMPACT spots on middle floors
+        for (let f = 0; f < newParkingLot.floorsReservedForCompact; f++) {
+            for (let s = 1; s <= newParkingLot.spotsPerFloorReservedForCompact; s++) {
+                parkingSpots.push({
+                    lotId: newParkingLot.id,
+                    floor: currentFloor,
+                    spotNumber: `COMPACT-${currentFloor}-${s}`,
+                    isOccupied: false,
+                    spotType: 'COMPACT'
+                });
+            }
+            currentFloor++;
+        }
+
+        // 3. BIKE spots on uppermost floors
+        for (let f = 0; f < newParkingLot.floorsReservedForBikes; f++) {
+            for (let s = 1; s <= newParkingLot.spotsPerFloorReservedForBikes; s++) {
+                parkingSpots.push({
+                    lotId: newParkingLot.id,
+                    floor: currentFloor,
+                    spotNumber: `BIKE-${currentFloor}-${s}`,
+                    isOccupied: false,
+                    spotType: 'BIKE'
+                });
+            }
+            currentFloor++;
+        }
+
+        // Bulk insert all spots
+        await prisma.parkingSpot.createMany({ data: parkingSpots });
+
         res.status(201).json({ 
             message: 'Parking lot created successfully',
-            newParkingLot
+            parkingLot: newParkingLot,
+            spotsCreated: {
+                large: newParkingLot.floorsReservedForTrucks * newParkingLot.spotsPerFloorReservedForTrucks,
+                compact: newParkingLot.floorsReservedForCompact * newParkingLot.spotsPerFloorReservedForCompact,
+                bike: newParkingLot.floorsReservedForBikes * newParkingLot.spotsPerFloorReservedForBikes,
+                total: parkingSpots.length
+            },
+            totalFloors: currentFloor - 1
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to create parking lot' });
