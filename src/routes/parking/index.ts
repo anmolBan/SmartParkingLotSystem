@@ -3,6 +3,7 @@ import { vehicleCheckInSchema, vehicleCheckOutSchema } from "../../validators/pa
 import { prisma } from "../../lib/prisma.js";
 import { SpotType } from "../../generated/prisma/enums.js";
 import { calculateParkingFee } from "../../lib/pricing.js";
+import { Prisma } from "../../generated/prisma/client.js";
 
 const router = express.Router();
 
@@ -19,20 +20,34 @@ router.post('/checkin', async (req: Request, res: Response) => {
 
     try {
         const result = await prisma.$transaction(async (tx) => {
-            // Find available spot
-            const parkingSpot = await tx.parkingSpot.findFirst({
-                where: {
-                    spotType: vehicleType as SpotType,
-                    isOccupied: false
-                },
-                orderBy: {
-                    id: 'asc'
-                }
+            // Check if vehicle is already parked
+            const existingVehicle = await tx.vehicle.findUnique({
+                where: { licensePlate }
             });
 
-            if (!parkingSpot) {
+            if (existingVehicle) {
+                throw new Error('VEHICLE_ALREADY_PARKED');
+            }
+
+            // Use row-level locking to prevent race conditions
+            // FOR UPDATE SKIP LOCKED ensures concurrent requests get different spots
+            const availableSpots = await tx.$queryRaw<
+                Array<{ id: number; floor: number; spotNumber: string }>
+            >`
+                SELECT id, floor, "spotNumber"
+                FROM "ParkingSpot"
+                WHERE "spotType" = ${vehicleType}::"SpotType"
+                AND "isOccupied" = false
+                ORDER BY id ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            `;
+
+            if (availableSpots.length === 0) {
                 throw new Error('NO_SPOT_AVAILABLE');
             }
+
+            const parkingSpot = availableSpots[0];
 
             // Create vehicle record
             const vehicle = await tx.vehicle.create({
@@ -51,6 +66,9 @@ router.post('/checkin', async (req: Request, res: Response) => {
             });
 
             return { vehicle, parkingSpot };
+        }, {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: 10000  // 10 second timeout to prevent deadlocks
         });
 
         res.json({ 
@@ -59,18 +77,19 @@ router.post('/checkin', async (req: Request, res: Response) => {
             parkingSpot: result.parkingSpot.spotNumber 
         });
     } catch (error) {
-        if (error instanceof Error && error.message === 'NO_SPOT_AVAILABLE') {
-            return res.status(400).json({ error: 'No available parking spots for this vehicle type' });
+        if (error instanceof Error) {
+            if (error.message === 'NO_SPOT_AVAILABLE') {
+                return res.status(400).json({ error: 'No available parking spots for this vehicle type' });
+            }
+            if (error.message === 'VEHICLE_ALREADY_PARKED') {
+                return res.status(400).json({ error: 'Vehicle is already parked in the lot' });
+            }
         }
         console.error('Error during vehicle check-in:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// function calculateParkingFee(checkInTime: Date, checkOutTime: Date, vehicleType: SpotType): number {
-//     const durationInHours = Math.ceil((checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60 * 60));
-//     let ratePerHour = 0;
-//     switch (vehicleType) {
 
 router.post('/checkout', async (req: Request, res: Response) => {
     const body = req.body;
@@ -85,14 +104,36 @@ router.post('/checkout', async (req: Request, res: Response) => {
 
     try {
         const result = await prisma.$transaction(async (tx) => {
-            // Find vehicle record
-            const vehicle = await tx.vehicle.findUnique({
-                where: { licensePlate },
-                include: { ParkingSpot: true }
+            // Lock the vehicle row to prevent double checkout
+            const vehicles = await tx.$queryRaw<
+                Array<{ 
+                    id: number; 
+                    licensePlate: string; 
+                    checkInTime: Date; 
+                    vehicleType: SpotType; 
+                    parkingSpotId: number 
+                }>
+            >`
+                SELECT id, "licensePlate", "checkInTime", "vehicleType"::"text"::"SpotType" as "vehicleType", "parkingSpotId"
+                FROM "Vehicle"
+                WHERE "licensePlate" = ${licensePlate}
+                FOR UPDATE
+            `;
+
+            if (vehicles.length === 0) {
+                throw new Error('VEHICLE_NOT_FOUND');
+            }
+
+            const vehicle = vehicles[0];
+            const checkOutTime = new Date();
+
+            // Get parking spot details
+            const parkingSpot = await tx.parkingSpot.findUnique({
+                where: { id: vehicle.parkingSpotId }
             });
 
-            if (!vehicle) {
-                throw new Error('VEHICLE_NOT_FOUND');
+            if (!parkingSpot) {
+                throw new Error('SPOT_NOT_FOUND');
             }
 
             // Mark spot as available
@@ -101,34 +142,37 @@ router.post('/checkout', async (req: Request, res: Response) => {
                 data: { isOccupied: false }
             });
 
-            // Keep it for history, but set check-out time
-            vehicle.checkOutTime = new Date();
+            // Calculate parking fee
+            const parkingFeeResult = calculateParkingFee(vehicle.checkInTime, checkOutTime, vehicle.vehicleType);
 
-            // delete vehicle record after check-out and strore history
+            // Store history
             await tx.parkingHistory.create({
                 data: {
                     licensePlate: vehicle.licensePlate,
                     vehicleType: vehicle.vehicleType,
                     checkInTime: vehicle.checkInTime,
-                    checkOutTime: vehicle.checkOutTime,
-                    parkingFee: calculateParkingFee(vehicle.checkInTime, vehicle.checkOutTime || new Date(), vehicle.vehicleType).parkingFee,
-                    parkingSpotNumber: vehicle.ParkingSpot.spotNumber
+                    checkOutTime: checkOutTime,
+                    parkingFee: parkingFeeResult.parkingFee,
+                    parkingSpotNumber: parkingSpot.spotNumber
                 }
             });
 
+            // Delete vehicle record
             await tx.vehicle.delete({
                 where: { id: vehicle.id }
             });
 
-            return { vehicle };
+            return { vehicle, parkingSpot, checkOutTime, parkingFeeResult };
+        }, {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: 10000
         });
-        const parkingFee = calculateParkingFee(result.vehicle.checkInTime, result.vehicle.checkOutTime || new Date(), result.vehicle.vehicleType);
 
         return res.json({ 
             message: 'Vehicle checked out successfully', 
-            parkingFloor: result.vehicle.ParkingSpot.floor, 
-            parkingSpot: result.vehicle.ParkingSpot.spotNumber,
-            parkingFee: parkingFee
+            parkingFloor: result.parkingSpot.floor, 
+            parkingSpot: result.parkingSpot.spotNumber,
+            parkingFee: result.parkingFeeResult
         });
 
     } catch (error) {
