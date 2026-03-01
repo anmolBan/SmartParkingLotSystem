@@ -20,3 +20,11 @@ export const vehicleCheckInSchema = zod.object({
     licensePlate: zod.string().min(1).max(20),
     vehicleType: zod.enum(spotTypeValues),
 });
+
+export type VehicleCheckInInput = zod.infer<typeof vehicleCheckInSchema>;
+
+export const vehicleCheckOutSchema = zod.object({
+    licensePlate: zod.string().min(1).max(20),
+});
+
+export type VehicleCheckOutInput = zod.infer<typeof vehicleCheckOutSchema>;

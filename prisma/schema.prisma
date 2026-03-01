@@ -63,6 +63,16 @@ model Vehicle {
   ParkingSpot   ParkingSpot @relation(fields: [parkingSpotId], references: [id])
 }
 
+model ParkingHistory {
+  id            Int      @id @default(autoincrement())
+  licensePlate  String
+  vehicleType   SpotType
+  checkInTime   DateTime
+  checkOutTime  DateTime
+  parkingFee    Float
+  parkingSpotNumber String
+}
+
 enum SpotType {
   BIKE
   COMPACT
